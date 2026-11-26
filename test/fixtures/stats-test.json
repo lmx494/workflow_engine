@@ -1,0 +1,30 @@
+{
+  "models": {
+    "local/m1": {
+      "ok_rate": 0.6666666666666666,
+      "p50_ms": 127,
+      "tok_s": null,
+      "n": 3,
+      "fails": {
+        "http": 1
+      },
+      "last_at": "2026-11-26T02:51:38.586Z",
+      "pass_rate": 1,
+      "pass_n": 1
+    },
+    "deepseek/deepseek-chat": {
+      "ok_rate": 1,
+      "p50_ms": null,
+      "tok_s": null,
+      "n": 1,
+      "fails": {},
+      "last_at": "2026-11-26T02:51:38.707Z",
+      "pass_rate": 1,
+      "pass_n": 1,
+      "jtool_rate": 0,
+      "jtool_n": 1
+    }
+  },
+  "generated_at": "2026-11-26T02:51:38.707Z",
+  "source": "attempts"
+}

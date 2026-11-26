@@ -1,0 +1,13 @@
+parts:
+  - id: sensor-read
+    domain: sensor
+    title: 传感器采集步骤
+    api:
+      - read_channel(channel: int, samples: int) -> int[]
+    interface:
+      input: { type: channel-id, unit: none }
+      output: { type: int-array, unit: counts }
+    must_have:
+      - 采样次数参数化 [S1]
+      - 通道号范围校验 [S2]
+    judge_mode: blocking

@@ -1,0 +1,19 @@
+{
+  "_comment": "复制为 wfe.config.json 使用。providers 只写引用，密钥放 keys.local.json。",
+  "providers": [
+    { "id": "local", "baseUrl": "http://127.0.0.1:8326/v1", "apiKeyFile": "~/.dsh/openai-gateway/api-key" },
+    { "id": "deepseek", "baseUrl": "https://api.deepseek.com/v1", "apiKeyEnv": "DEEPSEEK_API_KEY", "models": ["deepseek-chat", "deepseek-reasoner"] },
+    { "id": "qwen", "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1", "apiKeyEnv": "DASHSCOPE_API_KEY" }
+  ],
+  "defaultProvider": "local",
+  "matchMode": "routes",
+  "defaultPack": "",
+  "packs": {},
+  "routes": {},
+  "pool": [],
+  "plannerModel": "local/qodercn/qfmodel",
+  "plannerFallback": "local/qodercn/q37fmodel",
+  "judgeModel": "local/qodercn/q37fmodel",
+  "judge": true,
+  "judgeTools": false
+}

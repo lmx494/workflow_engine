@@ -1,0 +1,6 @@
+name: mini-pack
+artifact: procedure
+domains:
+  - sensor
+planner_hint:
+  本包演示 procedure 交付物：零件产出是编号操作步骤，不是代码。

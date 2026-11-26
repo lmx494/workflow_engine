@@ -1,0 +1,15 @@
+{
+  "name": "workflow-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "wfe": "./src/cli.js" },
+  "exports": { ".": "./src/engine/dispatch.js" },
+  "description": "确定性工作流引擎：planner 按领域包零件选型拆步 → 路由表选模执行（工具环自验证）→ 裁判对照目录契约+说明书验收 → stats 闭环。三条铁律机械执行：事实带来源、缺条目=未定义、拆分=封闭选型。宿主无关：CLI / MCP / DSH 插件壳。",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "files": ["src", "packs", "PLAN.md", "README.md"],
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

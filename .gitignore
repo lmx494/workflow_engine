@@ -1,0 +1,6 @@
+node_modules/
+keys.local.json
+*.local.json
+stats.json
+data/
+.DS_Store
