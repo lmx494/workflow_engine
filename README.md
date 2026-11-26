@@ -1,43 +1,107 @@
 # workflow-engine
 
-确定性工作流引擎：**用严谨的流程，用上限换准确和性价比**。
+**用严谨的流程，用上限换准确和性价比。**
 
-planner 按领域包零件目录拆步 → 路由表选模执行（步内工具环自验证）→ 裁判对照零件契约+说明书验收 → stats 闭环。
+一个宿主无关的确定性工作流引擎：把"长问题"拆成可验收的小步骤，用领域知识库约束每一步，
+让便宜模型也能产出可信结果。
 
-三条铁律机械执行：**事实必须带来源、缺条目=未定义、拆分=封闭选型**。
+## 它解决什么问题
+
+让 AI 一次性解决一个长问题，最容易出的错不是"不会做"，是**做着做着开始编**——
+凭记忆写协议数值、接口理解偏差、验收标准自说自话。市面上的 agent 框架大多靠
+"prompt 里劝模型别瞎编"，本质是祈祷。
+
+workflow-engine 换了个思路：**不祈祷，机械执行**。
+三条铁律写在代码里，不是写在提示词里：
+
+| 铁律 | 含义 | 机械化方式 |
+|---|---|---|
+| **事实必须带来源** | 产物里的每个协议数值/参数/字段，都要能指到知识库某条带来源的条目 | manual 条目无 `| 来源:` 直接拒收；执行 AI 被强制走 kb_search 检索 |
+| **缺条目 = 未定义** | 查不到就是查不到，不许用记忆补 | kb_search 未命中返回"未定义"；产物里只能写 `/* 未定义：待说明书 */` |
+| **拆分 = 封闭选型** | 步骤必须从零件目录里选型，目录外要显式说明原因 | planner 只能引用 catalog.yml 里的零件 id；选不了的必须写"自由拆分" |
+
+## 它不是什么
+
+- **不是通用 agent 平台**：不和 Codex/Claude Code 比"什么都会"，只做**有标准答案可查**的领域
+- **不是 RAG 套壳**：检索是封闭集上的关键词计分，不是向量召回；铁律是代码强制不是 prompt 恳求
+- **不适合创意写作/无标准答案的探索**：没有 must_have 可判的领域，铁律无用武之地
+
+适用边界：嵌入式固件、操作规程、合规检查、报表生成——**凡是"正确性可对照成文知识验收"的领域**。
+
+## 三层架构
+
+```
+┌─────────────────────────────────────────────┐
+│ 内容层（用户资产 = 真正的"插件"）               │
+│   领域包 pack：零件目录 + 清单 + 模板 + 错题 + 说明书 │
+│   → 换领域 = 换目录，零代码                        │
+├─────────────────────────────────────────────┤
+│ 策略层（接缝可插拔）                            │
+│   多 provider 模型、路由表、裁判、工具集、           │
+│   交付物措辞（artifact）、宿主适配（CLI/MCP/DSH）   │
+├─────────────────────────────────────────────┤
+│ 不变量层（锁死，永不插件化）                     │
+│   三条铁律 + 流水线骨架 + fail-closed 语义        │
+│   （未定义=拒绝，不是猜）                        │
+└─────────────────────────────────────────────┘
+```
+
+**为什么这样分**：信任这个系统靠的是底层不变量不可绕过——如果铁律也能被插件关掉，
+它就退化成又一个 prompt 套壳。插件化的是"怎么做"，锁死的是"不许作弊"。
+
+## 流水线
+
+```
+pack 解析 → planner 按零件目录拆步（封闭选型）
+  → 逐步 runStep：路由表选模 → 执行（步内工具环自验证：calc/kb_search/mistake_search）
+  → judge 对照零件契约+说明书验收（不通过带 critique 重做）
+  → stats 闭环：真实表现回写影响下次选模
+```
+
+## 知识库的双向闭环
+
+这是本项目区别于"一次性 RAG"的关键——知识库是**活的**：
+
+- **进来时体检**：`pack-check.js` L1 确定性检查（结构/引用/完整性，零成本）
+  + L2 AI 语义审查（常识合理性/矛盾/覆盖错位）——**只提问不判刑**，分级问题清单交给人
+- **用完后进化**：`learn.js` 回顾 run 轨迹，AI 把"哪步被裁判打回、为什么"提炼成
+  错题草稿 → 人审后入库 → `mistake_search` 让下次执行避坑
+
+> ⚠️ **免责声明**：lint 与 learn 都是 AI 顾问——只降低出错概率，不保证不会出错。
+> 知识库内容可能含错误，导入与使用时必须人工核对，最终责任在人。
 
 ## 快速开始
 
 ```bash
-# 配置（复制示例后填 provider/key）
-cp wfe.config.example.json wfe.config.json
-cp keys.example.json keys.local.json   # 填 apiKey 或指向 key 文件
+# 依赖：Node.js >= 20，零 npm 依赖
+cp wfe.config.example.json wfe.config.json   # 配置 providers
+cp keys.example.json keys.local.json          # 填 API key（或用 apiKeyEnv）
 
-# 跑一次 dispatch（先有 pack 才有领域约束）
+# 跑一次 dispatch
 node src/cli.js "总目标" --pack <pack名>
 
-# pack 体检（填知识库时用）
-node src/pack-check.js <pack>          # L1 确定性检查
-node src/pack-check.js <pack> --ai     # +L2 AI 语义检查
+# pack 体检（写知识库时用）
+node src/pack-check.js <pack>          # L1 确定性
+node src/pack-check.js <pack> --ai     # +L2 AI 语义
 
 # 错题总结（跑完 dispatch 后）
-node src/learn.js                      # AI 起草错题
-node src/learn.js --accept <草稿>       # 人审后入库
+node src/learn.js                      # AI 起草
+node src/learn.js --accept <草稿>       # 人审入库
 
-# MCP 服务（宿主无关接入）
-node src/mcp.js                        # stdio JSON-RPC，暴露 ai_dispatch tool
+# MCP 服务（让 Claude Code/Cursor 等宿主直接调用）
+node src/mcp.js                        # stdio JSON-RPC，暴露 ai_dispatch
 ```
+
+## 模型接入
+
+OpenAI 兼容协议全家桶：DeepSeek 官方、通义千问兼容模式、智谱、Kimi、OpenRouter、本地网关。
+model 引用格式 `<providerId>/<modelName>`，路由表按 task 类型排优先级，
+候选失败自动跨 provider 换下一个——**付费稳档打头，免费档兜底**。
 
 ## 文档
 
-- **[PACK-GUIDE.md](PACK-GUIDE.md)** — 领域包作者手册（写 pack 前必读）
-- [PLAN.md](PLAN.md) — 开发计划书与路线图
-
-## 架构（三层）
-
-- **不变量层（锁死）**：三条铁律 + 流水线骨架 + fail-closed——代码硬编码，不可配置
-- **策略层（可插拔）**：多 provider、路由表、裁判、工具集、交付物措辞、宿主适配
-- **内容层（用户资产）**：领域包 = 零件目录 + 清单 + 模板 + 错题 + 说明书；**换领域=换目录**
+- **[PACK-GUIDE.md](PACK-GUIDE.md)** — 领域包作者手册（写 pack 前必读：格式/铁律/工作流/常见坑）
+- [PLAN.md](PLAN.md) — 开发计划书、路线图、GitHub 借鉴地图
 
 ## 测试
 
@@ -45,7 +109,11 @@ node src/mcp.js                        # stdio JSON-RPC，暴露 ai_dispatch too
 node --test test/    # 28 组离线测试，全假 chat 零网关
 ```
 
-## 免责声明
+## 路线图（简）
 
-pack lint（L1/L2）与 learn 错题总结都是 **AI 顾问**：只降低出错概率，不保证不会出错。
-知识库内容可能含错误，导入与使用时必须人工核对，最终责任在人。
+- v1.1：pack lint L2 调优、stats Beta 分布升级、凭证泄漏扫描、run 存档清理
+- v2：错题自动草拟增强、陪审团裁判、机器操作 pack（AI 只进监督层不进控制层）
+
+## License
+
+MIT

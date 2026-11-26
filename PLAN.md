@@ -33,7 +33,7 @@
 让引擎在真实网络下完整跑一次 dispatch：
 
 - **前置**：✅ 已打通——DSH 网关在跑（581 个模型），但 **WSL 直连不通**（网关绑 Windows loopback），
-  必须用 Windows node 跑：`cmd.exe /c "cd /d C:\Users\lmxzsa\workflow-engine && node src\cli.js ..."`
+  必须用 Windows node 跑：`cmd.exe /c "cd /d C:\path\to\workflow-engine && node src\cli.js ..."`
 - **已验证（2026-11-26）**：mini-pack 端到端 ok:true——
   planner 真实拆步（2 步，选了 sensor-read 零件+自由拆分）、routes 选模、步内工具环（kb_search ×4/×3/×12）、
   **铁律实战生效**（执行 AI 主动标注"[S2] 通道范围未定义：待说明书"而非编造数值）、

@@ -10,7 +10,7 @@
       "apiKeyEnv": "DASHSCOPE_API_KEY"
     },
     "local": {
-      "apiKeyFile": "C:/Users/lmxzsa/.dsh/openai-gateway/api-key"
+      "apiKeyFile": "/path/to/your/gateway/api-key"
     }
   }
 }
