@@ -32,6 +32,7 @@ const baseCfg = () => mergeConfig({
   pool: ['local/m1', 'local/m2', 'deepseek/deepseek-chat'],
   routes: { 'code-gen': ['deepseek/deepseek-chat', 'local/m1'], general: ['local/m2'] },
   statsFile: path.join(HERE, 'fixtures', 'stats-test.json'),
+  runDir: path.join(HERE, 'fixtures', 'runs-test'),
 })
 
 /* ---------------- config ---------------- */
@@ -306,6 +307,61 @@ test('lint: 报告含免责声明', () => {
   const { issues, stats } = lintPack(PACK)
   const report = formatLintReport(PACK, { issues, stats })
   assert.ok(report.includes(LINT_DISCLAIMER.slice(0, 10)))
+})
+
+/* ---------------- runlog + learn（错题总结） ---------------- */
+
+const { persistRun, listRuns } = await import('../src/engine/runlog.js')
+const { summarizeRun, buildRecap } = await import('../src/engine/learn.js')
+
+test('runlog: persistRun 写档 + listRuns 逆序', () => {
+  const cfg = baseCfg()
+  fs.rmSync(cfg.runDir, { recursive: true, force: true })
+  const p1 = persistRun(cfg, { goal: 'g1', packName: 'mini-pack' }, { ok: true, results: [] })
+  const p2 = persistRun(cfg, { goal: 'g2', packName: 'mini-pack' }, { ok: false, stage: 'step:s1', results: [] })
+  assert.ok(p1 && p2 && fs.existsSync(p1))
+  const runs = listRuns(cfg)
+  assert.equal(runs.length, 2)
+  const doc = JSON.parse(fs.readFileSync(runs[0], 'utf8'))
+  assert.equal(doc.goal, 'g2')   //新的在前
+  assert.equal(doc.v, 1)
+})
+
+test('learn: buildRecap 包含关键字段且截断', () => {
+  const doc = {
+    goal: 'g', packName: 'p',
+    result: { ok: false, stage: 'step:s2', plannerModel: 'm', summary: 'sum',
+      results: [{ id: 's1', title: 't', ok: true, model: 'mm', part: 'pt',
+        attempts: [{ model: 'mm', ok: true, ms: 1, judged: false, critique: 'bad' }],
+        output: 'x'.repeat(2000) }] },
+  }
+  const recap = buildRecap(doc, { maxChars: 500 })
+  assert.ok(recap.includes('JUDGE-FAIL'))   // judged:false 的 attempt 带标记
+  assert.ok(recap.includes('critique'))
+  assert.ok(recap.length <= 520)
+})
+
+test('learn: summarizeRun 解析 JSONL 草稿 + 必填过滤 + 来源兜底', async () => {
+  const cfg = baseCfg()
+  cfg.learnModel = 'local/m1'
+  const runDoc = {
+    goal: 'g', packName: 'mini-pack', packRoot: PACK,
+    result: { ok: false, stage: 'step:s1', runFile: '/tmp/r1.json',
+      results: [{ id: 's1', title: 't', ok: false, judgeFailed: true, part: 'sensor-read',
+        attempts: [{ model: 'm', ok: true, ms: 1, judged: false, critique: '数值编造' }],
+        acceptance: { must_have: 'x' } }] },
+  }
+  const fakeChat = async () => [
+    '{"id":"m-1","domain":"sensor","part":"sensor-read","症状":"编造了通道范围","根因":"没查manual","修法":"先kb_search","验证":"","来源":""}',
+    '{"id":"m-2","domain":"sensor","症状":"缺修法字段"}',
+    '这不是JSON垃圾行',
+    '{"domain":"general","症状":"好条目","修法":"做对的做法"}',
+  ].join('\n')
+  const { drafts, rejected } = await summarizeRun(cfg, runDoc, { chat: fakeChat })
+  assert.equal(drafts.length, 2)
+  assert.equal(drafts[0]['来源'], 'run:r1.json step:s1')   // 空来源兜底
+  assert.equal(drafts[1].domain, 'general')
+  assert.equal(rejected.length, 2)   // 缺修法 + 垃圾行
 })
 
 /* ---------------- dispatch 集成 ---------------- */

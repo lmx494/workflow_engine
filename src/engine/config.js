@@ -103,6 +103,9 @@ const DEFAULTS = {
 
   // ---- 其他 ----
   statsFile: '',                    // 空 → <项目>/data/stats.json
+  runDir: '',                       // 空 → <项目>/data/runs（dispatch 结果存档，learn 功能依赖）
+  saveRuns: true,                   // false = 不存 run 档案
+  learnModel: '',                   // 空 → 用 judgeModel；learn/错题总结用的模型（建议 reasoner 档）
 }
 
 function clampInt(v, lo, hi, dflt) {

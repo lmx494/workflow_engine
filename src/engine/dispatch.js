@@ -16,6 +16,7 @@ import { runStep } from './executor.js'
 import { judgeStep } from './judge.js'
 import { loadPackFor } from './domain-pack.js'
 import { registerDomainTools } from './tools.js'
+import { persistRun } from './runlog.js'
 import fs from 'node:fs'
 
 // 领域工具（kb_search/mistake_search）注册一次；getPack 读当前 dispatch 的活跃 pack。
@@ -99,22 +100,32 @@ export async function dispatch(cfg, goal, context, maxSteps, signal, onProgress,
         attempts: r.attempts,
       })
       if (!r.ok) {
-        return {
+        const failed = {
           ok: false, stage: `step:${step.id}`, plannerModel: plan.plannerModel, matchMode: plan.matchMode,
           summary: plan.summary, ...(plan.plannerError ? { plannerError: plan.plannerError } : {}),
           ...(planRetry ? { planRetry } : {}), ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
           results,
         }
+        failed.runFile = persistRun(cfg, {
+          goal, context, packName: pack?.name || '', packRoot: pack?.root || '',
+          plannerModel: plan.plannerModel, matchMode: plan.matchMode,
+        }, failed)
+        return failed
       }
       upstream[step.id] = r.output
     }
   } finally {
     activePack = null
   }
-  return {
+  const done = {
     ok: true, stage: 'done', plannerModel: plan.plannerModel, matchMode: plan.matchMode,
     summary: plan.summary, ...(plan.plannerError ? { plannerError: plan.plannerError } : {}),
     ...(planRetry ? { planRetry } : {}), ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
     results,
   }
+  done.runFile = persistRun(cfg, {
+    goal, context, packName: pack?.name || '', packRoot: pack?.root || '',
+    plannerModel: plan.plannerModel, matchMode: plan.matchMode,
+  }, done)
+  return done
 }

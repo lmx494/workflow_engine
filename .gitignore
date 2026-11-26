@@ -6,3 +6,4 @@ keys.local.json
 node_modules/
 stats-test.json
 stats.json
+test/fixtures/runs-test/

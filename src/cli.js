@@ -110,4 +110,5 @@ if (json) {
     if (r.output) console.log(r.output)
   }
 }
+if (result.runFile && !json) console.error(`[wfe] run 存档: ${result.runFile}`)
 process.exit(result.ok ? 0 : 1)

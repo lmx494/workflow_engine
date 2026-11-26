@@ -61,7 +61,8 @@
 
 ### P2 · 质量闭环（运行时反哺知识库）
 
-- judgeFailed/连续失败的 dispatch → 自动把可疑 manual 条目标 `status:draft-recheck` 候选（人确认才转正）
+- ✅ **run 存档 + 错题总结（已完成）**：dispatch 结果持久化到 `data/runs/*.json`（成功失败都存，`saveRuns:false` 可关）；`node src/learn.js` 回顾轨迹 → AI 起草 mistakes.jsonl 候选 → 落 `mistakes-candidates/` 暂存区 → `--accept` 人工确认后追加进 `mistakes.jsonl`（mistake_search 立即可检索）。强制约束：草稿必填 domain/症状/修法、来源必须带 run 引用、纯基础设施失败（超时/HTTP）不总结。26 测试全绿。
+- judgeFailed/连续失败的 dispatch → 自动把可疑 manual 条目标 `status:draft-recheck` 候选（人确认才转正）——与 learn 互补，暂缓
 - stats 升级：agent-model-router 式 Beta(α,β) 置信下界路由（替代朴素 ok_rate）
 - usage/token 字段补记（现在 chat() 丢弃 usage，为成本统计留口）
 
