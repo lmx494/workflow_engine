@@ -1,0 +1,18 @@
+parts:
+  - id: ghost-part
+    domain: not-declared
+    title: 测试零件
+    api:
+      - "int f()"
+    interface:
+      input: { type: a }
+      output: { type: b }
+    must_have:
+      - "必须包含 [NOPE-99] 这个不存在的条目"
+  - id: ghost-part
+    domain: sensor
+    title: 重复 id
+    api:
+      - "int g()"
+    must_have:
+      - "无引用硬性要求"

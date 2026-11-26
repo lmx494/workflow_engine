@@ -266,6 +266,7 @@ test('judge: pack on 注入契约，输出 verdict 结构', async () => {
 
 test('stats: recordAttempts 聚合公式 + judged:null 不污染', () => {
   const cfg = baseCfg()
+  fs.rmSync(cfg.statsFile, { force: true })   // 上次运行的残留会污染计数
   recordAttempts(cfg, [
     { model: 'local/m1', ok: true, ms: 100, judged: true },
     { model: 'local/m1', ok: true, ms: 300, judged: null },
@@ -278,6 +279,33 @@ test('stats: recordAttempts 聚合公式 + judged:null 不污染', () => {
   assert.equal(m.pass_n, 1)          // judged:null 那条没计入
   assert.equal(m.pass_rate, 1)
   assert.equal(m.fails.http, 1)
+})
+
+/* ---------------- pack-lint（L1 确定性体检） ---------------- */
+
+const { lintPack, formatLintReport, LINT_DISCLAIMER } = await import('../src/engine/pack-lint.js')
+
+test('lint: mini-pack 干净（0 ERROR）', () => {
+  const { issues, stats } = lintPack(PACK)
+  assert.equal(stats.counts.ERROR || 0, 0)
+  assert.ok(stats.parts >= 1)
+})
+
+test('lint: bad-pack 抓出硬伤（重复id/未声明domain/缺条目引用/无来源manual/坏artifact）', () => {
+  const { issues } = lintPack(path.join(HERE, 'fixtures', 'bad-pack'))
+  const msgs = issues.map(i => i.msg).join('\n')
+  const errors = issues.filter(i => i.level === 'ERROR').map(i => i.msg).join('\n')
+  assert.ok(errors.includes('重复声明'), 'dup id ERROR')
+  assert.ok(errors.includes('不存在'), 'missingRefs ERROR')
+  assert.ok(msgs.includes('not-declared'), 'undeclared domain')
+  assert.ok(issues.some(i => i.msg.includes('无来源') || i.msg.includes('被拒')), '无来源 manual 被拒')
+  assert.ok(issues.some(i => i.level === 'WARN' && i.msg.includes('artifact')), '坏 artifact WARN')
+})
+
+test('lint: 报告含免责声明', () => {
+  const { issues, stats } = lintPack(PACK)
+  const report = formatLintReport(PACK, { issues, stats })
+  assert.ok(report.includes(LINT_DISCLAIMER.slice(0, 10)))
 })
 
 /* ---------------- dispatch 集成 ---------------- */

@@ -123,7 +123,7 @@ function deBom(s) { return String(s ?? '').replace(/^\uFEFF/, '') }
 /** pack.yml: `domains:` 列表 + 顶层标量。
  *  `domains: []`（内联空数组）与 `domains:` + `- x` 两种写法都要归一成数组——
  *  前者若当字符串存，下游 .filter 直接崩（2026-11-15 空白包实测抓到）。 */
-function parsePackYml(text) {
+export function parsePackYml(text) {
   const out = { domains: [], name: '', note: '', planner_hint: '', _hint: [] }
   let mode = null
   for (const raw of deBom(text).split(/\r?\n/)) {

@@ -1,6 +1,8 @@
-node_modules/
-keys.local.json
 *.local.json
-stats.json
-data/
 .DS_Store
+data/
+keys-test.json
+keys.local.json
+node_modules/
+stats-test.json
+stats.json
