@@ -8,7 +8,7 @@
       "fails": {
         "http": 1
       },
-      "last_at": "2026-11-26T03:56:05.037Z",
+      "last_at": "2026-11-26T04:18:37.963Z",
       "pass_rate": 1,
       "pass_n": 1
     },
@@ -18,13 +18,13 @@
       "tok_s": null,
       "n": 1,
       "fails": {},
-      "last_at": "2026-11-26T03:56:06.115Z",
+      "last_at": "2026-11-26T04:18:38.671Z",
       "pass_rate": 1,
       "pass_n": 1,
       "jtool_rate": 0,
       "jtool_n": 1
     }
   },
-  "generated_at": "2026-11-26T03:56:06.115Z",
+  "generated_at": "2026-11-26T04:18:38.671Z",
   "source": "attempts"
 }

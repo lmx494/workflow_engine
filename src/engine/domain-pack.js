@@ -695,12 +695,12 @@ export function resolvePackRoot(cfg = {}, name) {
   const roots = packRoots(cfg)
   const want = String(name || cfg.defaultPack || '').trim()
   if (want) {
-    if (roots[want]) return roots[want]
-    try { if (fs.existsSync(want) && fs.statSync(want).isDirectory()) return want } catch { /* not a path */ }
+    if (roots[want]) return path.resolve(roots[want])
+    try { if (fs.existsSync(want) && fs.statSync(want).isDirectory()) return path.resolve(want) } catch { /* not a path */ }
     return null
   }
   const names = Object.keys(roots)
-  if (names.length === 1) return roots[names[0]]
+  if (names.length === 1) return path.resolve(roots[names[0]])
   return null
 }
 

@@ -69,10 +69,13 @@ export async function summarizeRun(cfg, runDoc, deps = {}) {
   const runFile = runDoc?.result?.runFile ? String(runDoc.result.runFile).split(/[\\/]/).pop() : ''
   const recap = buildRecap(runDoc)
   const model = cfg.learnModel || cfg.judgeModel
+  const vocab = deps.packInfo
+    ? `\n【合法词表】domain 只能取: ${deps.packInfo.domains.join('|')}；part 只能取: ${deps.packInfo.parts.join('|') || '(无零件，全部留空)'}——超出词表的值会被拒收。`
+    : ''
   const content = await _chat(cfg, model, [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `run 标识: ${runFile || '(unknown)'}\n\n${recap}\n\n请输出错题草稿 JSONL：` },
-  ], undefined, cfg.learnTimeoutMs || cfg.judgeTimeoutMs)
+    { role: 'user', content: `run 标识: ${runFile || '(unknown)'}\n\n${recap}${vocab}\n\n请输出错题草稿 JSONL：` },
+  ], cfg.learnTimeoutMs || cfg.judgeTimeoutMs)
 
   const drafts = []
   const rejected = []

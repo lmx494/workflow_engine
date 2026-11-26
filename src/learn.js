@@ -44,7 +44,7 @@ function loadRunDoc(p) {
 }
 
 /* ---------- --list ---------- */
-if (has('--list') || (!args.filter(a => !a.startsWith('--')).length && !has('--accept'))) {
+if (has('--list')) {
   const runs = listRuns(cfg)
   if (json) { console.log(JSON.stringify(runs.map(p => ({ file: path.basename(p), mtime: fs.statSync(p).mtime.toISOString() })), null, 2)); process.exit(0) }
   if (!runs.length) { console.log(`（无 run 存档，目录: ${runDir(cfg)}）`); process.exit(0) }
@@ -75,6 +75,11 @@ if (has('--accept')) {
         break
       }
     }
+  }
+  // packRoot 可能是相对路径/Windows 反斜杠（老存档）——逐个候选探测
+  if (packRoot && !fs.existsSync(packRoot)) {
+    const alt = path.resolve(ROOT, packRoot.replace(/\\/g, '/'))
+    if (fs.existsSync(alt)) packRoot = alt
   }
   if (!packRoot || !fs.existsSync(packRoot)) {
     console.error('[learn] 无法确定 pack 根目录——用 --pack <路径> 指定')
@@ -117,7 +122,19 @@ if (!runPath) {
 if (!fs.existsSync(runPath)) { console.error(`[learn] run 文件不存在: ${runPath}`); process.exit(2) }
 
 const runDoc = loadRunDoc(runPath)
-const { drafts, rejected, runFile } = await summarizeRun(cfg, runDoc)
+// runFile 兜底：老存档的 result.runFile 可能缺（持久化时字段还没写回），用文件名补
+if (runDoc.result && !runDoc.result.runFile) runDoc.result.runFile = runPath
+// pack 上下文：给总结模型合法 domain/part 词表，防它编造枚举外的值
+let packInfo = null
+const packRootHint = arg('--pack') ? path.resolve(arg('--pack')) : (runDoc.packRoot || '')
+if (packRootHint && fs.existsSync(packRootHint)) {
+  try {
+    const { loadPack } = await import('./engine/domain-pack.js')
+    const pk = loadPack(packRootHint, { ttlMs: 0 })
+    if (pk) packInfo = { domains: pk.domains, parts: pk.parts.map(p => p.id) }
+  } catch { /* pack 读不出就让模型自由发挥 */ }
+}
+const { drafts, rejected, runFile } = await summarizeRun(cfg, runDoc, { packInfo })
 
 // 写草稿到 mistakes-candidates/（有 packRoot 才写；没有只打印）
 let draftFile = ''
@@ -135,6 +152,14 @@ if (json) {
 } else {
   console.log(`[learn] run: ${path.basename(runPath)}  pack=${runDoc.packName || '-'}  结果=${runDoc.result?.ok ? 'ok' : 'FAIL@' + runDoc.result?.stage}`)
   console.log(`[learn] 草稿 ${drafts.length} 条（rejected ${rejected.length}）`)
+  // 词表外警告：domain/part 不在 pack 枚举里——不拒收（人审），但标出来
+  if (packInfo) {
+    for (const d of drafts) {
+      const badD = d.domain && !packInfo.domains.includes(d.domain)
+      const badP = d.part && !packInfo.parts.includes(d.part)
+      if (badD || badP) console.log(`  ⚠ 词表外: ${d.id || '?'} domain=${d.domain}${badD ? '(不在枚举)' : ''} part=${d.part || '-'}${badP ? '(不在目录)' : ''}`)
+    }
+  }
   for (const d of drafts) {
     console.log(`\n--- ${d.id || '(no-id)'} [${d.domain}${d.part ? '/' + d.part : ''}] ---`)
     console.log(`症状: ${d['症状']}`)
