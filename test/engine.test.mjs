@@ -309,6 +309,34 @@ test('lint: 报告含免责声明', () => {
   assert.ok(report.includes(LINT_DISCLAIMER.slice(0, 10)))
 })
 
+/* ---------------- pack-ai（L2 AI 语义体检） ---------------- */
+
+const { aiLintPack, buildPackDigest } = await import('../src/engine/pack-ai.js')
+
+test('pack-ai: digest 含 pack/catalog/manual/checklist 内容', () => {
+  const d = buildPackDigest(PACK)
+  assert.ok(d.includes('sensor-read'))
+  assert.ok(d.includes('[S1]'))
+  assert.ok(d.includes('read-sensor'))
+  assert.ok(d.includes('被检查数据') === false)   // digest 本身不含边界标记
+})
+
+test('pack-ai: aiLintPack 解析 JSON 数组 + 分级排序 + 非法项过滤', async () => {
+  const cfg = baseCfg()
+  const fakeChat = async (c, m, msgs) => {
+    // 验证防注入边界标记存在
+    assert.ok(msgs[1].content.includes('被检查数据开始'))
+    return '```json\n[{"level":"warn","file":"catalog.yml#sensor-read","msg":"api 返回类型与 manual 矛盾","hint":"核对 §3"},{"level":"ERROR","file":"x","msg":"硬伤"},{"level":"BOGUS","file":"y","msg":"非法level降级"},{"level":"WARN"}]\n```'
+  }
+  const { issues, digestChars, rejected } = await aiLintPack(cfg, PACK, { chat: fakeChat })
+  assert.ok(digestChars > 100)
+  assert.equal(issues.length, 3)         // 缺 msg 的被拒
+  assert.equal(issues[0].level, 'ERROR') // 排序 ERROR 在前
+  assert.equal(issues[1].level, 'WARN')
+  assert.equal(issues[2].level, 'WARN')  // BOGUS → WARN 降级
+  assert.equal(rejected, 1)
+})
+
 /* ---------------- runlog + learn（错题总结） ---------------- */
 
 const { persistRun, listRuns } = await import('../src/engine/runlog.js')

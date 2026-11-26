@@ -51,7 +51,7 @@
 | 层 | 内容 | 成本 | 状态 |
 |---|---|---|---|
 | L1 确定性 lint | 结构完整性（pack.yml/catalog.yml/manual 引用）、引用闭合（checklist↔catalog、domains 声明 vs pack.yml 原文）、死条目、空壳零件目录、incomplete 原因列举 | 零（不调 LLM） | ✅ 已完成 `src/engine/pack-lint.js` + `src/pack-check.js`（23 测试含 lint 3 组） |
-| L2 AI 语义体检 | `wfe pack check --ai`：常识合理性质疑（"8 位单片机配 10GHz 采样"）、api 与 manual 自相矛盾、checklist 与目录覆盖错位、must_have 不可验收的空话 | 1-2 次 LLM 调用 | ⬜ 待做 |
+| L2 AI 语义体检 | `pack-check.js --ai`：常识合理性质疑、api↔manual 矛盾、checklist↔目录覆盖错位、must_have 空话、来源可疑、占位符残留 | 1 次 LLM 调用 | ✅ 已完成 `src/engine/pack-ai.js`（实测抓到真问题：mini-pack api/interface 参数数矛盾 + 清单覆盖错位） |
 
 **关键设计约束**：
 - 输出是**分级问题清单**（ERROR 疑似硬伤 / WARN 待核对 / INFO 提示），每条带文件定位+建议核对来源
