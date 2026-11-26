@@ -410,3 +410,76 @@ test('dispatch: 全流程假 chat 跑通（pack on 单步）', async () => {
   assert.equal(result.results[0].part, 'sensor-read')
   assert.equal(result.results[0].model, 'deepseek/deepseek-chat')   // routes 首选
 })
+
+/* ---------------- 计划闸门 + dry run ---------------- */
+
+test('dispatch: onPlan reject 带反馈 → 重拆后 approve 放行', async () => {
+  const cfg = baseCfg()
+  const pack = dp.loadPack(PACK, { ttlMs: 0 })
+  let planCalls = 0
+  const fakeChat = async (c, model, msgs) => {
+    const content = msgs[0].content
+    if (content.includes('任务分配器')) { planCalls++; return planJson }
+    if (content.includes('验收裁判')) return '{"pass":true,"critique":"","quality":""}'
+    return '采样结果：[1,2,3]'
+  }
+  const seen = []
+  const result = await dispatch(cfg, '读传感器', '', 3, undefined, () => {}, {
+    chat: fakeChat, pack,
+    onPlan: async (info) => {
+      seen.push(info)
+      return seen.length === 1
+        ? { action: 'reject', feedback: '步骤太粗，应该拆开' }
+        : { action: 'approve' }
+    },
+  }, { pack: PACK })
+  assert.equal(result.ok, true)
+  assert.equal(planCalls, 2)                       // 否决后重拆一次
+  assert.equal(result.planGate.rejects.length, 1)
+  assert.ok(result.planGate.rejects[0].includes('步骤太粗'))
+  assert.equal(seen[0].plan.steps.length, 1)      // 闸门拿到的是完整 plan 对象
+  assert.ok(seen[0].checks)                        // 同时拿到计划级检查结果
+})
+
+test('dispatch: onPlan abort → ok:false aborted，不执行任何步骤', async () => {
+  const cfg = baseCfg()
+  const pack = dp.loadPack(PACK, { ttlMs: 0 })
+  let execCalls = 0
+  const fakeChat = async (c, model, msgs) => {
+    const content = msgs[0].content
+    if (content.includes('任务分配器')) return planJson
+    execCalls++
+    return 'x'
+  }
+  const result = await dispatch(cfg, 'g', '', 3, undefined, () => {}, {
+    chat: fakeChat, pack,
+    onPlan: async () => ({ action: 'abort', reason: '拆分不对' }),
+  }, { pack: PACK })
+  assert.equal(result.ok, false)
+  assert.equal(result.aborted, true)
+  assert.equal(result.stage, 'plan-gate')
+  assert.equal(result.reason, '拆分不对')
+  assert.equal(execCalls, 0)
+  assert.ok(result.plan)                            // 中止也保留计划供查看
+})
+
+test('dispatch: dryRun 只拆分不执行', async () => {
+  const cfg = baseCfg()
+  const pack = dp.loadPack(PACK, { ttlMs: 0 })
+  let execCalls = 0
+  const fakeChat = async (c, model, msgs) => {
+    const content = msgs[0].content
+    if (content.includes('任务分配器')) return planJson
+    execCalls++
+    return 'x'
+  }
+  const result = await dispatch(cfg, '读传感器', '', 3, undefined, () => {},
+    { chat: fakeChat, pack }, { pack: PACK, dryRun: true })
+  assert.equal(result.ok, true)
+  assert.equal(result.dryRun, true)
+  assert.equal(result.stage, 'plan')
+  assert.equal(result.results.length, 0)
+  assert.ok(result.plan.steps.length >= 1)
+  assert.equal(result.plan._checklistText, undefined)   // 内部字段不外泄
+  assert.equal(execCalls, 0)
+})

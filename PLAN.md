@@ -59,9 +59,25 @@
 - 用最强可用模型跑检查（reasoner 档），检查者本身不能是被检查对象的同级弱模型
 - 防注入：pack 文本在 prompt 中明确标记为"被检查数据"而非指令
 
+### P1.5 · 人在回路（计划闸门 + dry run）—— ✅ 已完成
+
+用户要"看见工作过程 + 拆分时可干预"，落地为两级机制：
+
+- **计划闸门** `deps.onPlan`：planner 拆完步、计划级检查之后、执行之前暂停。
+  宿主返回 `{action:'approve'|'reject'|'edit'|'abort'}`——reject 的 feedback 回灌 criteria 触发重拆
+  （复用 planRetry 同款管道），edit 直接换计划，abort 中止（run 存档标记 `aborted:true`）。
+  连续否决 5 次自动中止，防宿主死循环。反馈只影响本次 dispatch，不改 pack——
+  持久化方法论改进仍走 pack 编辑（checklist/planner_hint），人与知识库的边界不破。
+- **CLI 交互**：TTY 下自动启用，计划预览（步骤/零件/needs/候选链/must_have/计划检查结果）
+  → `[y] 执行 [n] 重新拆分(可附反馈) [q] 中止`；非 TTY / `--json` / `--no-gate` 自动放行。
+- **dry run**：`cli --dry-run` 与 MCP `ai_dispatch{dry_run:true}` 只拆分不执行，
+  返回完整 plan——MCP 宿主可自行展示给用户确认后再正式调用（MCP 无交互通道，
+  dry_run 就是它的闸门等价物）。
+- 测试：闸门 reject→重拆、abort 不执行、dryRun 不执行 三组离线用例（31 测试全绿）。
+
 ### P2 · 质量闭环（运行时反哺知识库）
 
-- ✅ **run 存档 + 错题总结（已完成）**：dispatch 结果持久化到 `data/runs/*.json`（成功失败都存，`saveRuns:false` 可关）；`node src/learn.js` 回顾轨迹 → AI 起草 mistakes.jsonl 候选 → 落 `mistakes-candidates/` 暂存区 → `--accept` 人工确认后追加进 `mistakes.jsonl`（mistake_search 立即可检索）。强制约束：草稿必填 domain/症状/修法、来源必须带 run 引用、纯基础设施失败（超时/HTTP）不总结。26 测试全绿。
+- ✅ **run 存档 + 错题总结（已完成）**：dispatch 结果持久化到 `data/runs/*.json`（成功失败都存，`saveRuns:false` 可关）；`node src/learn.js` 回顾轨迹 → AI 起草 mistakes.jsonl 候选 → 落 `mistakes-candidates/` 暂存区 → `--accept` 人工确认后追加进 `mistakes.jsonl`（mistake_search 立即可检索）。强制约束：草稿必填 domain/症状/修法、来源必须带 run 引用、纯基础设施失败（超时/HTTP）不总结。31 测试全绿。
 - judgeFailed/连续失败的 dispatch → 自动把可疑 manual 条目标 `status:draft-recheck` 候选（人确认才转正）——与 learn 互补，暂缓
 - stats 升级：agent-model-router 式 Beta(α,β) 置信下界路由（替代朴素 ok_rate）
 - usage/token 字段补记（现在 chat() 丢弃 usage，为成本统计留口）

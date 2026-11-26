@@ -8,11 +8,16 @@
  *     [--planner <provider/model>] [--judge|--no-judge|--judge-advisory]
  *     [--judge-tools|--no-judge-tools] [--tools|--no-tools] [--mode routes|dynamic|legacy]
  *     [--keys <keys.local.json>] [--stats <file>] [--json]
+ *     [--dry-run] [--no-gate]
+ *
+ * 交互闸门：TTY 下拆分完成后暂停，等用户确认（y 执行 / n 反馈重拆 / q 中止）。
+ * 非 TTY、--json、--no-gate、--dry-run 时自动放行。
  *
  * 进度走 stderr（给人），--json 结果走 stdout（给机器），互不污染。
  */
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import readline from 'node:readline/promises'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -87,12 +92,56 @@ if (packArg && !packRoots(cfg)[packArg]) {
 const onProgress = (m) => { if (!json) console.error('[dispatch] ' + m) }
 const maxSteps = Number(arg('--max-steps', cfg.maxSteps)) || cfg.maxSteps
 const criteria = String(arg('--criteria', ''))
+const dryRun = has('--dry-run')
 
-const result = await dispatch(cfg, goal, String(arg('--context', '')), maxSteps, undefined, onProgress, {}, { pack: packName || undefined, criteria })
+// ---- 计划闸门：TTY 交互模式下拆分完成后暂停等用户确认 ----
+function formatPlan(plan, meta = {}) {
+  const out = []
+  out.push(`planner=${meta.plannerModel || plan.plannerModel} [${meta.matchMode || plan.matchMode}]${meta.packName ? ` pack=${meta.packName}` : ''}  共 ${plan.steps.length} 步`)
+  if (plan.summary) out.push(`概要: ${plan.summary}`)
+  for (const s of plan.steps || []) {
+    out.push(`\n[${s.id}] ${s.title}`)
+    if (s.part) out.push(`  零件: ${s.part}${s.domain ? ` (domain:${s.domain})` : ''}`)
+    else if (s.freePartReason) out.push(`  自由拆分: ${s.freePartReason}`)
+    if (s.needs) out.push(`  needs: ${JSON.stringify(s.needs)}`)
+    out.push(`  候选: ${(s.candidates || []).map(c => c.id + (c.effort ? '@' + c.effort : '')).join(' -> ') || '(无)'}`)
+    const mh = s.acceptance?.must_have
+    if (mh) out.push(`  must_have:\n${String(mh).split('\n').map(l => '    ' + l).join('\n')}`)
+    const qb = s.acceptance?.quality_bar
+    if (qb) out.push(`  quality_bar: ${String(qb).slice(0, 300)}`)
+  }
+  return out.join('\n')
+}
+const interactive = !json && !dryRun && !has('--no-gate') && !!process.stdin.isTTY
+let gateRl = null
+const onPlan = interactive ? async ({ plan, checks, plannerModel, matchMode, packName }) => {
+  gateRl = gateRl || readline.createInterface({ input: process.stdin, output: process.stderr, terminal: true })
+  gateRl.on('close', () => process.exit(130))
+  console.error('\n========== 计划预览 ==========')
+  console.error(formatPlan(plan, { plannerModel, matchMode, packName }))
+  if (checks && checks.skipped !== true) {
+    console.error(checks.ok === false ? `\n计划检查未过: ${checks.critique || ''}` : '\n计划检查: 通过')
+  }
+  const ans = (await gateRl.question('[y] 执行  [n] 重新拆分（可附反馈）  [q] 中止 > ')).trim().toLowerCase()
+  if (ans === 'q') return { action: 'abort', reason: '用户在计划闸门中止' }
+  if (ans === 'n' || ans === 'r') {
+    const fb = (await gateRl.question('否决反馈（直接回车=无反馈重拆）: ')).trim()
+    return { action: 'reject', feedback: fb }
+  }
+  return { action: 'approve' }
+} : undefined
+
+const result = await dispatch(cfg, goal, String(arg('--context', '')), maxSteps, undefined, onProgress,
+  onPlan ? { onPlan } : {}, { pack: packName || undefined, criteria, dryRun })
 
 // ---- 输出 ----
 if (json) {
   console.log(JSON.stringify(result, null, 2))
+} else if (result.dryRun || result.aborted) {
+  console.log('\n=== ' + (result.dryRun ? '计划（dry run，未执行）' : `已中止: ${result.reason || ''}`) + ' ===')
+  if (result.plan) console.log(formatPlan(result.plan, result))
+  if (result.summary) console.log('\n' + result.summary)
+  if (result.planGate) console.log('\n闸门记录: ' + result.planGate.rejects.join(' | '))
 } else {
   console.log('\n=== 计划 ===  planner=' + result.plannerModel + ' [mode:' + (result.matchMode || '?') + ']' + (result.plannerError ? ` (degraded: ${result.plannerError})` : ''))
   if (result.planRetry) console.log('计划重拆: ' + (result.planRetry.fixed ? '缺陷已修正' : '仍有残余缺陷'))

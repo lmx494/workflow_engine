@@ -49,6 +49,7 @@ const TOOL_DEF = {
       pack: { type: 'string', description: '可选：领域包名（不指定则用唯一 pack 或 defaultPack）。' },
       max_steps: { type: 'number', description: '可选：最多拆几步（默认 6，上限 12）。' },
       criteria: { type: 'string', description: '可选：硬性验收标准，每行一条；must_have 只能来自这里和目标原话。' },
+      dry_run: { type: 'boolean', description: '可选：true=只拆分不执行，返回计划预览（步骤/零件/候选模型/验收标准）。宿主可先把计划展示给用户确认，再不带 dry_run 正式调用。' },
     },
   },
 }
@@ -80,7 +81,7 @@ async function handle(msg) {
       const maxSteps = Math.min(12, Math.max(1, Math.trunc(Number(args.max_steps)) || cfg.maxSteps))
       const pack = String(args.pack || process.env.WFE_PACK || '') || undefined
       const result = await dispatch(cfg, goal, String(args.context || ''), maxSteps, undefined,
-        () => {}, {}, { pack, criteria: String(args.criteria || '') })
+        () => {}, {}, { pack, criteria: String(args.criteria || ''), dryRun: args.dry_run === true })
       reply(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] })
     } catch (e) {
       reply(id, { content: [{ type: 'text', text: `ERROR: ${String(e?.message || e)}` }], isError: true })

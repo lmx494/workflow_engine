@@ -46,12 +46,15 @@ export async function dispatch(cfg, goal, context, maxSteps, signal, onProgress,
   const _judge = deps.judge || ((c, s, o, sig, jd) => judgeStep(c, s, o, sig, { ...jd, pack }))
 
   const planDeps = { chat: _chat, catalog, stats, pack, criteria: opts.criteria }
+  const attachChecklist = (p) => {
+    if (pack && !pack.empty) {
+      const tk = cfg.checklistTask || Object.keys(pack.checklists || {})[0] || ''
+      p._checklistText = (tk && pack.checklists[tk]) || Object.values(pack.checklists || {})[0] || ''
+    }
+  }
   let plan = await makePlan(cfg, goal, context, maxSteps, signal, planDeps)
   // 记录 planner 实际用的 checklist（覆盖检查要对照同一份清单）
-  if (pack && !pack.empty) {
-    const tk = cfg.checklistTask || Object.keys(pack.checklists || {})[0] || ''
-    plan._checklistText = (tk && pack.checklists[tk]) || Object.values(pack.checklists || {})[0] || ''
-  }
+  attachChecklist(plan)
   onProgress?.(`planned by ${plan.plannerModel}: ${plan.steps.length} step(s) [${plan.matchMode}]${pack && !pack.empty ? ` [pack:${pack.name} parts=${pack.parts.length}]` : ''}`)
   for (const s of plan.steps) {
     onProgress?.(`  ${s.id} needs=${JSON.stringify(s.needs || {})}`)
@@ -66,15 +69,95 @@ export async function dispatch(cfg, goal, context, maxSteps, signal, onProgress,
     onProgress?.(`plan checks failed: ${checks.critique} — replanning once`)
     const retryDeps = { ...planDeps, criteria: [opts.criteria, `【上次计划未过计划级检查】${checks.critique}\n请修正覆盖缺口与接口问题后重新拆分。`].filter(Boolean).join('\n') }
     const plan2 = await makePlan(cfg, goal, context, maxSteps, signal, retryDeps)
-    if (pack && !pack.empty) {
-      const tk = cfg.checklistTask || Object.keys(pack.checklists || {})[0] || ''
-      plan2._checklistText = (tk && pack.checklists[tk]) || Object.values(pack.checklists || {})[0] || ''
-    }
+    attachChecklist(plan2)
     const checks2 = planChecks(pack, plan2)
     planRetry = { fixed: checks2.ok !== false, critique: checks.critique }
     plan = plan2
     checks = checks2
     onProgress?.(`replan: ${planRetry.fixed ? 'defects fixed' : 'residual defects remain'}`)
+  }
+
+  // ---- 计划闸门（deps.onPlan）：宿主审查拆分——approve 放行 / reject+feedback 重拆 / abort 中止 ----
+  // 反馈只影响本次 dispatch（回灌 criteria），不改 pack——持久化方法论改进走 pack 编辑。
+  const archiveMeta = { goal, context, packName: pack?.name || '', packRoot: pack?.root || '', plannerModel: plan.plannerModel, matchMode: plan.matchMode }
+  let planGate = null
+  if (deps.onPlan) {
+    const rejects = []
+    for (;;) {
+      const decision = await deps.onPlan({
+        goal, plan, checks, context,
+        plannerModel: plan.plannerModel, matchMode: plan.matchMode,
+        packName: pack?.name || '',
+      })
+      const action = String(decision?.action || 'approve')
+      if (action === 'abort') {
+        activePack = null
+        const aborted = {
+          ok: false, aborted: true, stage: 'plan-gate',
+          reason: String(decision.reason || '用户中止'),
+          plannerModel: plan.plannerModel, matchMode: plan.matchMode,
+          summary: plan.summary, ...(plan.plannerError ? { plannerError: plan.plannerError } : {}),
+          plan, results: [],
+          ...(planRetry ? { planRetry } : {}),
+          ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
+          ...(rejects.length ? { planGate: { rejects } } : {}),
+        }
+        aborted.runFile = persistRun(cfg, archiveMeta, aborted)
+        return aborted
+      }
+      if (action === 'edit' && Array.isArray(decision.plan?.steps) && decision.plan.steps.length) {
+        plan = decision.plan
+        attachChecklist(plan)
+        checks = planChecks(pack, plan)
+        break
+      }
+      if (action === 'reject' && rejects.length < 5) {
+        const fb = String(decision.feedback || '').trim() || '用户认为拆分不合理，请重新考虑步骤划分与零件选型'
+        rejects.push(fb)
+        onProgress?.(`plan rejected by user (#${rejects.length}): ${fb.slice(0, 80)} — replanning`)
+        const retryDeps = { ...planDeps, criteria: [opts.criteria, `【用户否决了上次拆分（第${rejects.length}次）】${fb}\n请按反馈修正后重新拆分。`].filter(Boolean).join('\n') }
+        plan = await makePlan(cfg, goal, context, maxSteps, signal, retryDeps)
+        attachChecklist(plan)
+        checks = planChecks(pack, plan)
+        continue
+      }
+      if (action === 'reject') {
+        // 连续否决 5 次仍不满意 → 按中止处理，防止宿主死循环烧 planner 调用
+        activePack = null
+        const aborted = {
+          ok: false, aborted: true, stage: 'plan-gate',
+          reason: '计划闸门连续否决 5 次，自动中止',
+          plannerModel: plan.plannerModel, matchMode: plan.matchMode,
+          summary: plan.summary, plan, results: [],
+          ...(planRetry ? { planRetry } : {}),
+          ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
+          planGate: { rejects },
+        }
+        aborted.runFile = persistRun(cfg, archiveMeta, aborted)
+        return aborted
+      }
+      break // approve / 未知 action → 放行
+    }
+    if (rejects.length) planGate = { rejects }
+  }
+
+  // ---- dry run：只出计划不执行（MCP 宿主拿去给用户确认后再正式调用）----
+  if (opts.dryRun) {
+    activePack = null
+    const planOut = { ...plan }
+    delete planOut._checklistText
+    const dry = {
+      ok: true, dryRun: true, stage: 'plan',
+      plannerModel: plan.plannerModel, matchMode: plan.matchMode,
+      summary: plan.summary, ...(plan.plannerError ? { plannerError: plan.plannerError } : {}),
+      plan: planOut,
+      ...(planRetry ? { planRetry } : {}),
+      ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
+      ...(planGate ? { planGate } : {}),
+      results: [],
+    }
+    dry.runFile = persistRun(cfg, archiveMeta, dry)
+    return dry
   }
 
   // ---- 逐步执行 ----
@@ -104,6 +187,7 @@ export async function dispatch(cfg, goal, context, maxSteps, signal, onProgress,
           ok: false, stage: `step:${step.id}`, plannerModel: plan.plannerModel, matchMode: plan.matchMode,
           summary: plan.summary, ...(plan.plannerError ? { plannerError: plan.plannerError } : {}),
           ...(planRetry ? { planRetry } : {}), ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
+          ...(planGate ? { planGate } : {}),
           results,
         }
         failed.runFile = persistRun(cfg, {
@@ -121,6 +205,7 @@ export async function dispatch(cfg, goal, context, maxSteps, signal, onProgress,
     ok: true, stage: 'done', plannerModel: plan.plannerModel, matchMode: plan.matchMode,
     summary: plan.summary, ...(plan.plannerError ? { plannerError: plan.plannerError } : {}),
     ...(planRetry ? { planRetry } : {}), ...(checks && checks.skipped !== true ? { planChecks: checks } : {}),
+    ...(planGate ? { planGate } : {}),
     results,
   }
   done.runFile = persistRun(cfg, {
