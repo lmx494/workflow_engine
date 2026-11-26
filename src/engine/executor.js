@@ -11,7 +11,7 @@
  *     成本步骤的值——"查错手册"的路机械封死（铁律级设计，别简化）。
  *
  * runStep 三种判定模式（acceptance 锚定降级链）：
- *  blocking  must_have≥8字：裁判可判死 → 同模型带批评重做(judgeRetries) → 换候选 → 诚实上报
+ *  blocking  must_have≥8字：裁判可判死 → 同模型带批评重做(至多1次，judgeRetries 上限钉死) → 再错换候选 → 诚实上报
  *  advisory  仅 quality_bar / --judge-advisory：裁判跑，批评进结果，永不阻断
  *  none      没开裁判或没标准：单次尝试
  */

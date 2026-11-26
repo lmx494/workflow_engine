@@ -483,3 +483,73 @@ test('dispatch: dryRun 只拆分不执行', async () => {
   assert.equal(result.plan._checklistText, undefined)   // 内部字段不外泄
   assert.equal(execCalls, 0)
 })
+
+/* ---------------- trace（run 轨迹渲染） ---------------- */
+
+const { formatTrace, traceStatus } = await import('../src/engine/trace.js')
+
+test('trace: 完整 run 渲染——拆分/候选/打回原因/重做放行', () => {
+  const doc = {
+    saved_at: '2026-11-26T06:00:00.000Z', goal: '读传感器', packName: 'mini-pack',
+    plannerModel: 'qfmodel', matchMode: 'routes',
+    result: {
+      ok: true, plannerModel: 'qfmodel', matchMode: 'routes', summary: '单步',
+      planGate: { rejects: ['s2 不该独立拆'] },
+      results: [{
+        id: 's1', title: '采集', part: 'sensor-read', domain: 'sensor',
+        candidates: ['m1', 'm2'], needs: { task: 'code-gen' },
+        acceptance: { must_have: '输出采样数组' },
+        attempts: [
+          { model: 'm1', ok: true, judged: false, critique: '示例JSON仅50项' },
+          { model: 'm1', ok: true, judged: true },
+        ],
+        output: 'line1\n' + 'x'.repeat(5000),
+      }],
+    },
+  }
+  const t = formatTrace(doc)
+  assert.ok(t.includes('结果: ok'))
+  assert.ok(t.includes('闸门否决 1 次'))
+  assert.ok(t.includes('[s1] 采集'))
+  assert.ok(t.includes('零件: sensor-read'))
+  assert.ok(t.includes('候选链: m1 -> m2'))
+  assert.ok(t.includes('输出采样数组'))
+  assert.ok(t.includes('裁判打回: 示例JSON仅50项'))
+  assert.ok(t.includes('裁判放行'))
+  assert.ok(t.includes('截断') && t.includes('--full'))   // output 截断提示
+  assert.ok(!t.includes('toolCalls'))                     // 不展示工具细节
+  const full = formatTrace(doc, { full: true })
+  assert.ok(full.includes('x'.repeat(5000)))
+})
+
+test('trace: 传输失败 + judgeFailed + dryRun/abort 分支', () => {
+  const doc = {
+    saved_at: 't', goal: 'g', packName: 'p', result: {
+      ok: false, stage: 'step:s1',
+      results: [{
+        id: 's1', title: 't', candidates: ['m1', 'm2'],
+        attempts: [
+          { model: 'm1', ok: false, reason: 'timeout' },
+          { model: 'm2', ok: true, judged: false, critique: '编造了寄存器' },
+        ],
+        judgeFailed: true, lastCritique: '编造了寄存器',
+      }],
+    },
+  }
+  const t = formatTrace(doc)
+  assert.equal(traceStatus(doc), 'FAIL@step:s1')
+  assert.ok(t.includes('失败: timeout'))
+  assert.ok(t.includes('裁判最终未放行'))
+  assert.ok(t.includes('learn.js'))                      // 尾部 learn 引导
+
+  const dry = { saved_at: 't', goal: 'g', result: { ok: true, dryRun: true, stage: 'plan',
+    plan: { steps: [{ id: 's1', title: 'x', candidates: [{ id: 'm1' }], acceptance: { must_have: 'h' } }] }, results: [] } }
+  const dt = formatTrace(dry)
+  assert.equal(traceStatus(dry), 'DRY-RUN')
+  assert.ok(dt.includes('[s1] x'))
+  assert.ok(!dt.includes('执行:'))                        // dryRun 无执行记录
+
+  const ab = { saved_at: 't', goal: 'g', result: { ok: false, aborted: true, stage: 'plan-gate', reason: '用户中止', plan: { steps: [{ id: 's1', title: 'x' }] }, results: [] } }
+  assert.equal(traceStatus(ab), '已中止')
+  assert.ok(formatTrace(ab).includes('中止原因: 用户中止'))
+})

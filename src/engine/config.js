@@ -178,7 +178,8 @@ export function mergeConfig(raw, opt = {}) {
   cfg.candidatesPerStep = clampInt(cfg.candidatesPerStep, 1, 6, DEFAULTS.candidatesPerStep)
   cfg.stepTimeoutMs = clampInt(cfg.stepTimeoutMs, 5_000, 900_000, DEFAULTS.stepTimeoutMs)
   cfg.plannerTimeoutMs = clampInt(cfg.plannerTimeoutMs, 10_000, 900_000, DEFAULTS.plannerTimeoutMs)
-  cfg.judgeRetries = clampInt(cfg.judgeRetries, 0, 3, DEFAULTS.judgeRetries)
+  // 铁律级策略：同一模型最多被裁判打回 1 次重做，再错视为模型能力问题直接换候选（上限钉死 1，不开放更大值）
+  cfg.judgeRetries = clampInt(cfg.judgeRetries, 0, 1, DEFAULTS.judgeRetries)
   cfg.judgeTimeoutMs = clampInt(cfg.judgeTimeoutMs, 5_000, 300_000, DEFAULTS.judgeTimeoutMs)
   cfg.judgeToolMaxRounds = clampInt(cfg.judgeToolMaxRounds, 1, 8, DEFAULTS.judgeToolMaxRounds)
   cfg.judgeToolTimeoutMs = clampInt(cfg.judgeToolTimeoutMs, 10_000, 600_000, DEFAULTS.judgeToolTimeoutMs)
