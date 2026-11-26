@@ -28,13 +28,18 @@
 
 ## 下一阶段路线（按优先级）
 
-### P0 · 真实跑通验证（当前唯一硬任务）
+### P0 · 真实跑通验证（进行中）
 
 让引擎在真实网络下完整跑一次 dispatch：
 
-- **前置**：DSH 网关（127.0.0.1:8326）在跑，或 `keys.local.json` 填入 DeepSeek/通义 key
-- **步骤**：① 离线验证 robotics pack 能被 `loadPackFor` 正确加载（不需网络）② 配好 provider 后 `node src/cli.js "目标" --pack robotics --json` 真实跑 ③ 录屏/留档作为回归基线
-- **验收**：一次端到端 ok:true，attempts 里能看到真实模型名和耗时
+- **前置**：✅ 已打通——DSH 网关在跑（581 个模型），但 **WSL 直连不通**（网关绑 Windows loopback），
+  必须用 Windows node 跑：`cmd.exe /c "cd /d C:\Users\lmxzsa\workflow-engine && node src\cli.js ..."`
+- **已验证（2026-11-26）**：mini-pack 端到端 ok:true——
+  planner 真实拆步（2 步，选了 sensor-read 零件+自由拆分）、routes 选模、步内工具环（kb_search ×4/×3/×12）、
+  **铁律实战生效**（执行 AI 主动标注"[S2] 通道范围未定义：待说明书"而非编造数值）、
+  **裁判抓到真缺陷**（示例 JSON 50 项≠100 项→重做→放行）、候选超时自动换模型（GLM-Flash 60s 超时→q37fmodel）
+- **遗留**：① 单次 attempt 50-66s，免费模型慢，真实领域任务总时长会很长 ② robotics pack 是空骨架，
+  真实领域验证需先填 catalog/manual 内容 ③ Windows node v26 vs WSL node v22 行为差异未测
 
 ### P1 · pack lint（知识库体检）—— AI 顾问定位
 
